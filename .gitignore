@@ -2,6 +2,5 @@ __pycache__/
 *.pyc
 .venv/
 .word2vec/
-.claude/
 .ipynb_checkpoints/
 .DS_Store
