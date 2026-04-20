@@ -1,20 +1,22 @@
 import numpy as np
 
-def build_vocab(tokens):
+
+def build_vocab(tokens, min_count=1):
+    counts = {}
+    for token in tokens:
+        counts[token] = counts.get(token, 0) + 1
     word_id = {}
     index = 0
-
     for token in tokens:
-        if token not in word_id:
+        if token not in word_id and counts[token] >= min_count:
             word_id[token] = index
             index += 1
-
     id_word = {idx: token for token, idx in word_id.items()}
     return word_id, id_word
 
 
 def tokens_to_ids(tokens, word_id):
-    return np.array([word_id[token] for token in tokens], dtype=np.int64)
+    return np.array([word_id[t] for t in tokens if t in word_id], dtype=np.int64)
 
 
 def compute_word_counts(token_ids, vocab_size):
@@ -22,13 +24,12 @@ def compute_word_counts(token_ids, vocab_size):
 
 
 def generate_skipgrams(token_ids, window_size):
-    skipgrams = []
-    
-    for i in range(len(token_ids)):
+    pairs = []
+    n = len(token_ids)
+    for i in range(n):
         left = max(0, i - window_size)
-        right = min(len(token_ids), i + window_size + 1)
-        
-        for j in range(left, right):    
+        right = min(n, i + window_size + 1)
+        for j in range(left, right):
             if j != i:
-                skipgrams.append((token_ids[i], token_ids[j]))
-    return skipgrams
+                pairs.append((token_ids[i], token_ids[j]))
+    return np.array(pairs, dtype=np.int64)

@@ -1,75 +1,37 @@
 import numpy as np
 
-from sampling import sample_negative_ids
-from model import (
-    lookup_embedding,
-    compute_scores,
-    compute_loss,
-    compute_gradients,
-    update_parameters,
-)
+from sampling import sample_negatives
+from model import forward_and_backward, sgd_update
 
-def train_on_example(target_id, context_id, W_in, W_out,
-                     distribution, num_negatives, learning_rate):
-    forbidden_ids = {target_id, context_id}
 
-    negative_ids = sample_negative_ids(
-        num_samples=num_negatives,
-        vocab_size=W_out.shape[0],
-        distribution=distribution,
-        forbidden_ids=forbidden_ids,
+def train_on_pair(center_id, context_id, W_in, W_out,
+                  distribution, num_negatives, lr):
+    negative_ids = sample_negatives(
+        num_negatives, distribution,
+        forbidden_ids={int(center_id), int(context_id)},
     )
-
-    v, u_pos, u_negs = lookup_embedding(
-        target_id, context_id, negative_ids, W_in, W_out
+    loss, grad_v_c, grad_u_o, grad_u_k = forward_and_backward(
+        int(center_id), int(context_id), negative_ids, W_in, W_out
     )
-
-    pos_score, neg_scores = compute_scores(v, u_pos, u_negs)
-    loss = compute_loss(pos_score, neg_scores)
-
-    grad_v, grad_u_pos, grad_u_negs = compute_gradients(
-        v, u_pos, u_negs, pos_score, neg_scores
+    sgd_update(
+        int(center_id), int(context_id), negative_ids,
+        grad_v_c, grad_u_o, grad_u_k,
+        W_in, W_out, lr,
     )
-
-    update_parameters(
-        target_id, context_id, negative_ids,
-        grad_v, grad_u_pos, grad_u_negs,
-        W_in, W_out, learning_rate
-    )
-
     return loss
 
-def train_epoch(skipgrams, W_in, W_out, distribution, num_negatives, learning_rate):
-    total_loss = 0.0
 
-    for target_id, context_id in skipgrams:
-        total_loss += train_on_example(
-            target_id, context_id,
-            W_in, W_out,
-            distribution,
-            num_negatives,
-            learning_rate
-        )
-
-    return total_loss / len(skipgrams)
-
-
-def train(skipgrams, W_in, W_out, distribution, num_negatives, learning_rate, epochs):
+def train(skipgrams, W_in, W_out, distribution, num_negatives, lr, epochs):
     losses = []
-
-    for epoch in range(epochs):
+    for epoch in range(1, epochs + 1):
         np.random.shuffle(skipgrams)
-
-        loss = train_epoch(
-            skipgrams,
-            W_in,
-            W_out,
-            distribution,
-            num_negatives,
-            learning_rate
-        )
-
-        losses.append(loss)
-        print(f"epoch {epoch + 1} / {epochs}, Loss: {loss: .4f}")
-
+        total = 0.0
+        for center_id, context_id in skipgrams:
+            total += train_on_pair(
+                center_id, context_id,
+                W_in, W_out, distribution, num_negatives, lr,
+            )
+        avg = total / len(skipgrams)
+        losses.append(avg)
+        print(f"Epoch {epoch}/{epochs}  loss={avg:.4f}")
     return losses

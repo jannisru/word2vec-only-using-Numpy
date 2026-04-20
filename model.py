@@ -2,52 +2,44 @@ import numpy as np
 
 
 def sigmoid(x):
-    x = np.clip(x, -50, 50)
-    
-    return 1 / (1 + np.exp(-x))
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -10.0, 10.0)))
 
-def initialize_parameters(vocab_size, embedding_dimension):
-    W_in = np.random.randn(vocab_size, embedding_dimension) * 0.01
-    W_out = np.random.randn(vocab_size, embedding_dimension) * 0.01
 
+def initialize_parameters(vocab_size, embedding_dim):
+    scale = 0.5 / embedding_dim
+    W_in = np.random.uniform(-scale, scale,
+                             (vocab_size, embedding_dim)).astype(np.float32)
+    W_out = np.zeros((vocab_size, embedding_dim), dtype=np.float32)
     return W_in, W_out
 
-def lookup_embedding(target_id, context_id, negative_ids, W_in, W_out):
-    v = W_in[target_id]
-    u_positive = W_out[context_id]
-    u_negative = W_out[negative_ids]
 
-    return v, u_positive, u_negative
+def forward_and_backward(center_id, context_id, negative_ids, W_in, W_out):
+    v_c = W_in[center_id].copy()      
+    u_o = W_out[context_id].copy()    
+    u_k = W_out[negative_ids].copy()  
+                                      
 
-def compute_scores(v, u_positive, u_negative):
-    pos_score = np.dot(u_positive, v)
-    neg_scores = u_negative @ v
+    pos_score = v_c @ u_o             
+    neg_scores = u_k @ v_c            
 
-    return pos_score, neg_scores
+    sig_pos = sigmoid(pos_score)      
+    sig_neg = sigmoid(neg_scores)     
 
-def compute_loss(pos_score, neg_scores):
-    eps = 1e-10
+    loss = -np.log(sig_pos) - np.sum(np.log(1.0 - sig_neg))
 
-    return -np.log(sigmoid(pos_score) + eps) - np.sum(np.log(sigmoid(-neg_scores) + eps))
+    e_pos = sig_pos - 1.0
+    e_neg = sig_neg      
 
-def compute_gradients(v, u_pos, u_negs, pos_score, neg_scores):
-    sig_pos = sigmoid(pos_score)
-    sig_neg = sigmoid(neg_scores)
+    grad_v_c = e_pos * u_o + e_neg @ u_k    
+    grad_u_o = e_pos * v_c                  
+    grad_u_k = e_neg[:, None] * v_c         
 
-    g_pos = sig_pos - 1.0
-    g_neg = sig_neg
+    return loss, grad_v_c, grad_u_o, grad_u_k
 
-    grad_v = g_pos * u_pos + np.sum(g_neg[:, None] * u_negs, axis=0)
-    grad_u_pos = g_pos * v
-    grad_u_negs = g_neg[:, None] * v[None, :]
 
-    return grad_v, grad_u_pos, grad_u_negs
-
-def update_parameters(target_id, context_id, negative_ids,
-                      grad_v, grad_u_pos, grad_u_negs,
-                      W_in, W_out, learning_rate):
-    W_in[target_id] -= learning_rate * grad_v
-    W_out[context_id] -= learning_rate * grad_u_pos
-
-    for neg_id, grad in zip(negative_ids, grad_u_negs):
-        W_out[neg_id] -= learning_rate * grad
+def sgd_update(center_id, context_id, negative_ids,
+               grad_v_c, grad_u_o, grad_u_k,
+               W_in, W_out, lr):
+    W_in[center_id] -= lr * grad_v_c
+    W_out[context_id] -= lr * grad_u_o
+    np.add.at(W_out, negative_ids, -lr * grad_u_k)
